@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Monte Carlo Explorer</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%237c6dfa'/><text x='50%25' y='54%25' dominant-baseline='middle' text-anchor='middle' font-size='16' font-family='sans-serif' font-weight='bold' fill='white'>MC</text></svg>"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #0a0a0f; --surface: #12121a; --surface2: #1a1a26;
+    --border: rgba(255,255,255,0.07); --accent: #7c6dfa; --accent2: #fa6d9a;
+    --accent3: #6dfad1; --text: #e8e8f0; --muted: #6b6b88; --radius: 16px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-serif; min-height: 100vh; overflow-x: hidden; }
+  body::before { content: ''; position: fixed; inset: 0;
+    background: radial-gradient(ellipse 60% 50% at 20% 10%, rgba(124,109,250,0.12) 0%, transparent 60%),
+      radial-gradient(ellipse 50% 40% at 80% 80%, rgba(250,109,154,0.08) 0%, transparent 60%),
+      radial-gradient(ellipse 40% 60% at 60% 40%, rgba(109,250,209,0.05) 0%, transparent 60%);
+    pointer-events: none; z-index: 0; }
+  .wrapper { position: relative; z-index: 1; max-width: 960px; margin: 0 auto; padding: 24px 16px 60px; }
+
+  .site-header { text-align: center; padding: 40px 0 32px; }
+  .site-header .eyebrow { font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.25em; color: var(--accent); text-transform: uppercase; margin-bottom: 12px; }
+  .site-header h1 { font-size: clamp(2rem, 6vw, 3.4rem); font-weight: 800; line-height: 1.05; letter-spacing: -0.02em;
+    background: linear-gradient(135deg, #fff 30%, var(--accent) 70%, var(--accent2) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .site-header p { margin-top: 12px; color: var(--muted); font-size: 0.95rem; font-family: 'DM Mono', monospace; }
+
+  .tab-nav { display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 5px; margin-bottom: 28px; overflow-x: auto; scrollbar-width: none; }
+  .tab-nav::-webkit-scrollbar { display: none; }
+  .tab-btn { flex: 1; min-width: 90px; padding: 10px 10px; background: transparent; border: none; border-radius: 10px; color: var(--muted); font-family: 'Syne', sans-serif; font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease; white-space: nowrap; }
+  .tab-btn:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  .tab-btn.active { background: linear-gradient(135deg, var(--accent), #9d90ff); color: #fff; box-shadow: 0 4px 20px rgba(124,109,250,0.35); }
+  .tab-panel { display: none; animation: fadeUp 0.35s ease; }
+  .tab-panel.active { display: block; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+  .result-layout { display: grid; grid-template-columns: 1fr 290px; gap: 16px; align-items: start; }
+  @media(max-width: 720px) { .result-layout { grid-template-columns: 1fr; } }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 16px; }
+  .card-title { font-size: 0.72rem; font-family: 'DM Mono', monospace; letter-spacing: 0.18em; color: var(--accent); text-transform: uppercase; margin-bottom: 18px; display: flex; align-items: center; gap: 8px; }
+  .card-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  @media(max-width: 560px) { .grid-3, .grid-2 { grid-template-columns: 1fr; } }
+
+  .field { display: flex; flex-direction: column; gap: 7px; }
+  .field label { font-size: 0.7rem; font-family: 'DM Mono', monospace; color: var(--muted); letter-spacing: 0.05em; }
+  .field input[type=number]:not(.range-num) { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: 'DM Mono', monospace; font-size: 0.88rem; padding: 10px 12px; outline: none; transition: border-color 0.2s; -webkit-appearance: none; }
+  .field input[type=number]:not(.range-num):focus { border-color: var(--accent); }
+
+  /* FIXED SLIDER ROW — slider fills space, number input locked to right */
+  .range-row { display: flex; align-items: center; gap: 10px; width: 100%; }
+  .range-row input[type=range] {
+    flex: 1; min-width: 0; /* critical — lets it shrink */
+    background: transparent; border: none; outline: none;
+    cursor: pointer; accent-color: var(--accent);
+    padding: 6px 0; -webkit-appearance: none; height: 20px;
+  }
+  .range-row input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--surface2); border: 1px solid var(--border); }
+  .range-row input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); margin-top: -6px; cursor: pointer; }
+  .range-row input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; background: var(--surface2); }
+  .range-row input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: var(--accent); border: none; cursor: pointer; }
+  .range-num {
+    flex-shrink: 0; width: 72px; /* fixed, won't grow */
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-family: 'DM Mono', monospace;
+    font-size: 0.82rem; padding: 7px 8px; outline: none; -webkit-appearance: none;
+    text-align: center; transition: border-color 0.2s;
+  }
+  .range-num:focus { border-color: var(--accent); }
+
+  .run-btn { width: 100%; padding: 14px; margin-top: 4px; background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%); border: none; border-radius: 10px; color: #fff; font-family: 'Syne', sans-serif; font-size: 0.88rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; transition: opacity 0.2s, transform 0.15s; box-shadow: 0 4px 24px rgba(124,109,250,0.3); }
+  .run-btn:hover { opacity: 0.88; transform: translateY(-1px); }
+  .run-btn:active { transform: translateY(0); }
+
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .metric { background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 16px 14px; text-align: center; }
+  .metric-label { font-family: 'DM Mono', monospace; font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; }
+  .metric-value { font-size: 1.2rem; font-weight: 700; color: var(--text); line-height: 1; }
+  .metric-value.accent { color: var(--accent); }
+  .metric-value.green  { color: var(--accent3); }
+  .metric-value.pink   { color: var(--accent2); }
+
+  canvas { width: 100% !important; border-radius: 10px; background: var(--surface2); display: block; }
+
+  .prob-bar-label { font-family: 'DM Mono', monospace; font-size: 0.7rem; color: var(--muted); margin-bottom: 6px; display: flex; justify-content: space-between; }
+  .prob-bar-track { height: 8px; background: var(--surface2); border-radius: 99px; overflow: hidden; }
+  .prob-bar-fill { height: 100%; border-radius: 99px; transition: width 0.8s cubic-bezier(.34,1.56,.64,1); }
+
+  .result-highlight { background: linear-gradient(135deg, rgba(124,109,250,0.12), rgba(250,109,154,0.08)); border: 1px solid rgba(124,109,250,0.25); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px; text-align: center; }
+  .result-highlight .big-number { font-size: clamp(2rem, 7vw, 3rem); font-weight: 800; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1; }
+  .result-highlight .sub { font-family: 'DM Mono', monospace; font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+
+  .math-panel { background: var(--surface); border: 1px solid rgba(109,250,209,0.18); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; position: sticky; top: 16px; }
+  .math-panel .card-title { color: var(--accent3); }
+  .math-eq { margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+  .math-eq:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+  .math-eq-label { font-family: 'DM Mono', monospace; font-size: 0.62rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 5px; }
+  .math-eq-formula { font-family: 'DM Mono', monospace; font-size: 0.78rem; color: var(--accent3); line-height: 1.65; background: var(--surface2); border-radius: 8px; padding: 9px 11px; }
+  .math-eq-note { font-family: 'DM Mono', monospace; font-size: 0.67rem; color: var(--muted); margin-top: 5px; line-height: 1.5; }
+
+  .conclusion-card { background: linear-gradient(135deg, rgba(124,109,250,0.08), rgba(109,250,209,0.05)); border: 1px solid rgba(124,109,250,0.2); border-radius: var(--radius); padding: 24px; margin-top: 4px; }
+  .conclusion-card .card-title { color: var(--accent2); }
+  .conclusion-text { font-family: 'DM Mono', monospace; font-size: 0.82rem; color: var(--text); line-height: 1.85; }
+  .conclusion-text strong { color: var(--accent3); }
+  .therefore { color: var(--accent2); font-weight: 700; font-size: 0.88rem; }
+
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; font-family: 'DM Mono', monospace; font-size: 0.7rem; color: var(--muted); }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; vertical-align: middle; }
+
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 0.8rem; }
+  .empty-icon { font-size: 2.5rem; margin-bottom: 12px; opacity: 0.4; }
+
+  /* Estate Tax tab specifics */
+  .et-view-nav { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+  .et-view-btn { padding: 8px 16px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 0.72rem; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+  .et-view-btn.active { background: rgba(124,109,250,0.2); border-color: var(--accent); color: var(--accent); }
+  .et-view { display: none; }
+  .et-view.active { display: block; }
+  .scenario-legend { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 12px; font-family: 'DM Mono', monospace; font-size: 0.72rem; }
+  .scenario-badge { display: flex; align-items: center; gap: 6px; }
+  .scenario-color { width: 12px; height: 4px; border-radius: 2px; }
+  .slider-group { margin-bottom: 10px; }
+  .slider-group label { font-family: 'DM Mono', monospace; font-size: 0.68rem; color: var(--muted); letter-spacing: 0.05em; display: block; margin-bottom: 5px; }
+  .params-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media(max-width: 560px) { .params-grid { grid-template-columns: 1fr; } }
+  .et-layout { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
+  @media(max-width: 720px) { .et-layout { grid-template-columns: 1fr; } }
+  .research-badge { background: linear-gradient(135deg, rgba(250,109,154,0.12), rgba(124,109,250,0.08)); border: 1px solid rgba(250,109,154,0.25); border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; font-family: 'DM Mono', monospace; font-size: 0.72rem; color: var(--muted); line-height: 1.6; }
+  .research-badge strong { color: var(--accent2); }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+  <header class="site-header">
+    <div class="eyebrow">Simulation Engine</div>
+    <h1>Monte Carlo<br/>Explorer</h1>
+    <p>// uncertainty made visible, one sample at a time</p>
+  </header>
+
+  <nav class="tab-nav">
+    <button class="tab-btn active" onclick="switchTab('pi',this)">🎯 Pi</button>
+    <button class="tab-btn" onclick="switchTab('timeline',this)">📅 Project</button>
+    <button class="tab-btn" onclick="switchTab('invest',this)">💰 Investment</button>
+    <button class="tab-btn" onclick="switchTab('estate',this)">🏛️ Estate Tax</button>
+  </nav>
+
+  <!-- ===== TAB 1: PI ===== -->
+  <div id="tab-pi" class="tab-panel active">
+    <div class="card">
+      <div class="card-title">Configuration</div>
+      <div class="field" style="margin-bottom:18px;">
+        <label>Number of Darts to Throw</label>
+        <div class="range-row">
+          <input type="range" id="pi-slider" min="100" max="20000" value="2000" step="100"
+            oninput="document.getElementById('pi-num').value=this.value"/>
+          <input type="number" class="range-num" id="pi-num" value="2000" min="100" max="20000"
+            oninput="const v1=clamp(this.value,100,20000);document.getElementById('pi-slider').value=v1"/>
+        </div>
+      </div>
+      <button class="run-btn" onclick="runPi()">▶ Run Simulation</button>
+    </div>
+    <div id="pi-result" style="display:none">
+      <div class="result-highlight">
+        <div class="big-number" id="pi-value">—</div>
+        <div class="sub">Estimated value of π</div>
+      </div>
+      <div class="metrics">
+        <div class="metric"><div class="metric-label">True π</div><div class="metric-value">3.1416</div></div>
+        <div class="metric"><div class="metric-label">Estimate</div><div class="metric-value accent" id="pi-est">—</div></div>
+        <div class="metric"><div class="metric-label">Error</div><div class="metric-value pink" id="pi-err">—</div></div>
+        <div class="metric"><div class="metric-label">Inside</div><div class="metric-value green" id="pi-inside">—</div></div>
+      </div>
+      <div class="result-layout">
+        <div>
+          <div class="card"><div class="card-title">Dart Board</div>
+            <canvas id="pi-canvas" height="300"></canvas>
+            <div class="legend">
+              <span><span class="legend-dot" style="background:var(--accent)"></span>Inside</span>
+              <span><span class="legend-dot" style="background:var(--accent2)"></span>Outside</span>
+            </div>
+          </div>
+        </div>
+        <div><div class="math-panel"><div class="card-title">Math Behind It</div>
+          <div class="math-eq"><div class="math-eq-label">Core Estimate</div><div class="math-eq-formula">π ≈ 4 × (hits / N)</div><div class="math-eq-note">P(inside unit circle) = π/4</div></div>
+          <div class="math-eq"><div class="math-eq-label">Circle Test</div><div class="math-eq-formula">x² + y² ≤ 1<br/>x,y ~ Uniform(−1, 1)</div><div class="math-eq-note">Random point inside if dist from origin ≤ 1</div></div>
+          <div class="math-eq"><div class="math-eq-label">Area Ratio</div><div class="math-eq-formula">πr² / (2r)² = π/4<br/>∴ π = 4 × P(inside)</div></div>
+          <div class="math-eq"><div class="math-eq-label">Std Error (CLT)</div><div class="math-eq-formula">σ ≈ √(π(4−π) / N)</div><div class="math-eq-note" id="pi-sigma-note">Error shrinks as 1/√N</div></div>
+        </div></div>
+      </div>
+      <div class="conclusion-card"><div class="card-title">Conclusion</div><div class="conclusion-text" id="pi-conclusion">—</div></div>
+    </div>
+    <div id="pi-empty" class="empty-state"><div class="empty-icon">🎯</div>Throw some darts to estimate π</div>
+  </div>
+
+  <!-- ===== TAB 2: TIMELINE ===== -->
+  <div id="tab-timeline" class="tab-panel">
+    <div class="card">
+      <div class="card-title">Duration Estimate (Days)</div>
+      <div class="grid-3" style="margin-bottom:18px;">
+        <div class="field"><label>Best Case</label><input type="number" id="tl-min" value="20"/></div>
+        <div class="field"><label>Most Likely</label><input type="number" id="tl-mode" value="30"/></div>
+        <div class="field"><label>Worst Case</label><input type="number" id="tl-max" value="60"/></div>
+      </div>
+      <div class="field" style="margin-bottom:18px;">
+        <label>Deadline (Days)</label>
+        <div class="range-row">
+          <input type="range" id="tl-slider" min="10" max="120" value="45" step="1"
+            oninput="document.getElementById('tl-num').value=this.value"/>
+          <input type="number" class="range-num" id="tl-num" value="45" min="10" max="120"
+            oninput="const v2=clamp(this.value,10,120);document.getElementById('tl-slider').value=v2"/>
+        </div>
+      </div>
+      <button class="run-btn" onclick="runTimeline()">▶ Simulate Risk</button>
+    </div>
+    <div id="tl-result" style="display:none">
+      <div class="result-highlight">
+        <div class="big-number" id="tl-prob">—</div>
+        <div class="sub" id="tl-prob-sub">chance of finishing on time</div>
+      </div>
+      <div class="metrics">
+        <div class="metric"><div class="metric-label">Median Days</div><div class="metric-value accent" id="tl-median">—</div></div>
+        <div class="metric"><div class="metric-label">P10</div><div class="metric-value green" id="tl-p10">—</div></div>
+        <div class="metric"><div class="metric-label">P90</div><div class="metric-value pink" id="tl-p90">—</div></div>
+        <div class="metric"><div class="metric-label">Simulations</div><div class="metric-value">10K</div></div>
+      </div>
+      <div class="result-layout">
+        <div>
+          <div class="card"><div class="card-title">Completion Distribution</div><canvas id="tl-canvas" height="220"></canvas></div>
+          <div class="card" style="padding:16px 20px;">
+            <div class="prob-bar-label"><span>On-time probability</span><span id="tl-bar-pct">0%</span></div>
+            <div class="prob-bar-track"><div class="prob-bar-fill" id="tl-bar-fill" style="width:0%;background:linear-gradient(90deg,var(--accent),var(--accent3))"></div></div>
+          </div>
+        </div>
+        <div><div class="math-panel"><div class="card-title">Math Behind It</div>
+          <div class="math-eq"><div class="math-eq-label">Triangular PDF</div><div class="math-eq-formula">f(x)=2(x−a)/[(b−a)(c−a)]<br/>for a ≤ x ≤ c</div><div class="math-eq-note">a=min, b=max, c=mode</div></div>
+          <div class="math-eq"><div class="math-eq-label">Inverse CDF Sampling</div><div class="math-eq-formula">U&lt;(c−a)/(b−a):<br/> x=a+√(U(b−a)(c−a))<br/>else:<br/> x=b−√((1−U)(b−a)(b−c))</div><div class="math-eq-note">U ~ Uniform(0,1)</div></div>
+          <div class="math-eq"><div class="math-eq-label">On-Time Probability</div><div class="math-eq-formula">P(T ≤ D) = hits / N</div></div>
+          <div class="math-eq"><div class="math-eq-label">Theoretical Mean</div><div class="math-eq-formula">μ = (a + b + c) / 3</div><div class="math-eq-note" id="tl-mean-note">—</div></div>
+        </div></div>
+      </div>
+      <div class="conclusion-card"><div class="card-title">Conclusion</div><div class="conclusion-text" id="tl-conclusion">—</div></div>
+    </div>
+    <div id="tl-empty" class="empty-state"><div class="empty-icon">📅</div>Set your estimates and simulate project risk</div>
+  </div>
+
+  <!-- ===== TAB 3: INVESTMENT ===== -->
+  <div id="tab-invest" class="tab-panel">
+    <div class="card">
+      <div class="card-title">Portfolio Parameters</div>
+      <div class="grid-2" style="margin-bottom:14px;">
+        <div class="field"><label>Initial Investment ($)</label><input type="number" id="inv-init" value="10000"/></div>
+        <div class="field"><label>Time Horizon (Years)</label><input type="number" id="inv-years" value="10"/></div>
+      </div>
+      <div class="grid-2" style="margin-bottom:14px;">
+        <div class="field"><label>Annual Return (% avg)</label><input type="number" id="inv-return" value="8" step="0.5"/></div>
+        <div class="field"><label>Annual Volatility (% σ)</label><input type="number" id="inv-vol" value="15" step="0.5"/></div>
+      </div>
+      <div class="field" style="margin-bottom:18px;">
+        <label>Number of Simulated Paths</label>
+        <div class="range-row">
+          <input type="range" id="inv-slider" min="50" max="500" value="200" step="50"
+            oninput="document.getElementById('inv-num').value=this.value"/>
+          <input type="number" class="range-num" id="inv-num" value="200" min="50" max="500"
+            oninput="const v3=clamp(this.value,50,500);document.getElementById('inv-slider').value=v3"/>
+        </div>
+      </div>
+      <button class="run-btn" onclick="runInvestment()">▶ Simulate Portfolio</button>
+    </div>
+    <div id="inv-result" style="display:none">
+      <div class="metrics">
+        <div class="metric"><div class="metric-label">Median Final</div><div class="metric-value accent" id="inv-median">—</div></div>
+        <div class="metric"><div class="metric-label">Best 10%</div><div class="metric-value green" id="inv-p90">—</div></div>
+        <div class="metric"><div class="metric-label">Worst 10%</div><div class="metric-value pink" id="inv-p10">—</div></div>
+        <div class="metric"><div class="metric-label">Beat Inflation</div><div class="metric-value" id="inv-beat">—</div></div>
+      </div>
+      <div class="result-layout">
+        <div>
+          <div class="card"><div class="card-title">Simulated Price Paths</div><canvas id="inv-canvas" height="260"></canvas>
+            <div class="legend"><span><span class="legend-dot" style="background:var(--accent3)"></span>Median</span><span><span class="legend-dot" style="background:var(--accent);opacity:0.5"></span>Paths</span><span><span class="legend-dot" style="background:var(--accent2)"></span>Worst 10%</span></div>
+          </div>
+          <div class="card"><div class="card-title">Final Value Distribution</div><canvas id="inv-hist" height="180"></canvas></div>
+        </div>
+        <div><div class="math-panel"><div class="card-title">Math Behind It</div>
+          <div class="math-eq"><div class="math-eq-label">Geometric Brownian Motion</div><div class="math-eq-formula">S_t=S₀·exp((μ−σ²/2)t+σ√t·Z)</div><div class="math-eq-note">Z~N(0,1); models log-normal growth</div></div>
+          <div class="math-eq"><div class="math-eq-label">Log-Return Per Year</div><div class="math-eq-formula">r = (μ − σ²/2) + σ·Z</div><div class="math-eq-note">−σ²/2 corrects for log-normal bias</div></div>
+          <div class="math-eq"><div class="math-eq-label">Expected Final Value</div><div class="math-eq-formula">E[S_T] = S₀ · e^(μT)</div><div class="math-eq-note" id="inv-expected-note">—</div></div>
+          <div class="math-eq"><div class="math-eq-label">Inflation Benchmark (3%)</div><div class="math-eq-formula">S_inf = S₀ · (1.03)^T</div><div class="math-eq-note" id="inv-inflation-note">—</div></div>
+          <div class="math-eq"><div class="math-eq-label">Box-Muller</div><div class="math-eq-formula">Z=√(−2lnU₁)·cos(2πU₂)</div><div class="math-eq-note">U₁,U₂~Uniform(0,1)</div></div>
+        </div></div>
+      </div>
+      <div class="conclusion-card"><div class="card-title">Conclusion</div><div class="conclusion-text" id="inv-conclusion">—</div></div>
+    </div>
+    <div id="inv-empty" class="empty-state"><div class="empty-icon">💰</div>Configure your portfolio and run the simulation</div>
+  </div>
+
+  <!-- ===== TAB 4: ESTATE TAX ===== -->
+  <div id="tab-estate" class="tab-panel">
+
+    <div class="research-badge">
+      <strong>📋 Research Context</strong> — This simulation models projected government revenue under three estate tax policy scenarios in the Philippines, directly supporting Research Questions 4.1 and 5.1–5.2 on revenue from unlocking frozen assets, rate reduction impacts, and reform comparisons.
+    </div>
+
+    <div class="et-layout">
+      <!-- LEFT: Parameters -->
+      <div>
+        <div class="card">
+          <div class="card-title">Scenario Parameters</div>
+
+          <div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border);">
+            <div style="font-family:'DM Mono',monospace;font-size:0.68rem;color:var(--accent3);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px;">🔓 Abolition Scenario</div>
+            <div class="slider-group"><label>Frozen Asset Base (₱B)</label>
+              <div class="range-row">
+                <input type="range" id="et-frozen" min="30" max="150" value="78" step="1" oninput="document.getElementById('et-frozen-n').value=this.value"/>
+                <input type="number" class="range-num" id="et-frozen-n" value="78" min="30" max="150" oninput="const v4=clamp(this.value,30,150);document.getElementById('et-frozen').value=v4"/>
+              </div>
+            </div>
+            <div class="slider-group"><label>CGT Rate (%)</label>
+              <div class="range-row">
+                <input type="range" id="et-cgt" min="2" max="15" value="6" step="0.5" oninput="document.getElementById('et-cgt-n').value=this.value"/>
+                <input type="number" class="range-num" id="et-cgt-n" value="6" min="2" max="15" step="0.5" oninput="const v5=clamp(this.value,2,15);document.getElementById('et-cgt').value=v5"/>
+              </div>
+            </div>
+            <div class="slider-group"><label>RPT Rate (%)</label>
+              <div class="range-row">
+                <input type="range" id="et-rpt" min="0.5" max="3" value="1.5" step="0.1" oninput="document.getElementById('et-rpt-n').value=this.value"/>
+                <input type="number" class="range-num" id="et-rpt-n" value="1.5" min="0.5" max="3" step="0.1" oninput="const v6=clamp(this.value,0.5,3);document.getElementById('et-rpt').value=v6"/>
+              </div>
+            </div>
+            <div class="slider-group"><label>GDP Multiplier</label>
+              <div class="range-row">
+                <input type="range" id="et-gdp" min="1.0" max="3.0" value="1.5" step="0.1" oninput="document.getElementById('et-gdp-n').value=this.value"/>
+                <input type="number" class="range-num" id="et-gdp-n" value="1.5" min="1.0" max="3.0" step="0.1" oninput="const v7=clamp(this.value,1.0,3.0);document.getElementById('et-gdp').value=v7"/>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border);">
+            <div style="font-family:'DM Mono',monospace;font-size:0.68rem;color:var(--accent);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px;">📝 Reform Scenario</div>
+            <div class="slider-group"><label>Reformed ET Rate (%)</label>
+              <div class="range-row">
+                <input type="range" id="et-rate" min="1" max="10" value="3" step="0.5" oninput="document.getElementById('et-rate-n').value=this.value"/>
+                <input type="number" class="range-num" id="et-rate-n" value="3" min="1" max="10" step="0.5" oninput="const v8=clamp(this.value,1,10);document.getElementById('et-rate').value=v8"/>
+              </div>
+            </div>
+            <div class="slider-group"><label>Adoption Rate (%)</label>
+              <div class="range-row">
+                <input type="range" id="et-adopt" min="10" max="90" value="45" step="1" oninput="document.getElementById('et-adopt-n').value=this.value"/>
+                <input type="number" class="range-num" id="et-adopt-n" value="45" min="10" max="90" oninput="const v9=clamp(this.value,10,90);document.getElementById('et-adopt').value=v9"/>
+              </div>
+            </div>
+            <div class="slider-group"><label>Amnesty Compliance Lift (%)</label>
+              <div class="range-row">
+                <input type="range" id="et-compliance" min="5" max="60" value="25" step="1" oninput="document.getElementById('et-compliance-n').value=this.value"/>
+                <input type="number" class="range-num" id="et-compliance-n" value="25" min="5" max="60" oninput="const v10=clamp(this.value,5,60);document.getElementById('et-compliance').value=v10"/>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-bottom:14px;">
+            <div style="font-family:'DM Mono',monospace;font-size:0.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px;">⚙️ Simulation</div>
+            <div class="slider-group"><label>Iterations per Scenario</label>
+              <div class="range-row">
+                <input type="range" id="et-iter" min="500" max="10000" value="5000" step="500" oninput="document.getElementById('et-iter-n').value=this.value"/>
+                <input type="number" class="range-num" id="et-iter-n" value="5000" min="500" max="10000" oninput="const v11=clamp(this.value,500,10000);document.getElementById('et-iter').value=v11"/>
+              </div>
+            </div>
+          </div>
+
+          <button class="run-btn" onclick="runEstate()">▶ Run Estate Tax Simulation</button>
+        </div>
+
+        <div class="math-panel" style="position:static;">
+          <div class="card-title">Model Equations</div>
+          <div class="math-eq"><div class="math-eq-label">Abolition Revenue</div>
+            <div class="math-eq-formula">R_abol = A·CGT·GDP_mult<br/>+ A·RPT·ε_rpt</div>
+            <div class="math-eq-note">A = frozen assets, ε_rpt ~ N(1, 0.15)</div>
+          </div>
+          <div class="math-eq"><div class="math-eq-label">Reform Revenue</div>
+            <div class="math-eq-formula">R_ref = A·η·ET_rate·ε_et<br/>+ A·η·compliance_lift</div>
+            <div class="math-eq-note">η = adoption rate, ε_et ~ N(1, 0.12)</div>
+          </div>
+          <div class="math-eq"><div class="math-eq-label">Baseline Revenue</div>
+            <div class="math-eq-formula">R_base ~ N(3.2B, 0.8B)</div>
+            <div class="math-eq-note">Status quo: &lt;0.1% of national revenue</div>
+          </div>
+          <div class="math-eq"><div class="math-eq-label">Uncertainty Model</div>
+            <div class="math-eq-formula">ε ~ N(μ=1, σ=0.1–0.2)</div>
+            <div class="math-eq-note">Each run samples a noise factor — captures policy implementation uncertainty</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Charts -->
+      <div>
+        <div id="et-empty" class="empty-state" style="padding:60px 20px;"><div class="empty-icon">🏛️</div>Run the simulation to model estate tax reform scenarios</div>
+
+        <div id="et-result" style="display:none">
+          <div class="metrics" style="margin-bottom:16px;">
+            <div class="metric"><div class="metric-label">Abolition Median</div><div class="metric-value green" id="et-m-abol">—</div></div>
+            <div class="metric"><div class="metric-label">Reform Median</div><div class="metric-value accent" id="et-m-ref">—</div></div>
+            <div class="metric"><div class="metric-label">Baseline Median</div><div class="metric-value pink" id="et-m-base">—</div></div>
+          </div>
+
+          <div class="et-view-nav">
+            <button class="et-view-btn active" onclick="switchEtView('dist',this)">📊 Revenue Distribution</button>
+            <button class="et-view-btn" onclick="switchEtView('conv',this)">📈 Convergence</button>
+            <button class="et-view-btn" onclick="switchEtView('risk',this)">⚖️ Risk Comparison</button>
+          </div>
+
+          <div id="et-view-dist" class="et-view active">
+            <div class="card"><div class="card-title">Probability Distribution of Revenue (₱B)</div>
+              <div class="scenario-legend">
+                <div class="scenario-badge"><div class="scenario-color" style="background:#6dfad1"></div><span style="font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--muted)">Abolition</span></div>
+                <div class="scenario-badge"><div class="scenario-color" style="background:#7c6dfa"></div><span style="font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--muted)">Reform</span></div>
+                <div class="scenario-badge"><div class="scenario-color" style="background:#fa6d9a"></div><span style="font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--muted)">Baseline</span></div>
+              </div>
+              <canvas id="et-dist-canvas" height="280"></canvas>
+            </div>
+          </div>
+
+          <div id="et-view-conv" class="et-view">
+            <div class="card"><div class="card-title">Convergence — Running Mean per Scenario (₱B)</div>
+              <canvas id="et-conv-canvas" height="280"></canvas>
+            </div>
+          </div>
+
+          <div id="et-view-risk" class="et-view">
+            <div class="card"><div class="card-title">Risk Profile — Percentile Comparison (₱B)</div>
+              <canvas id="et-risk-canvas" height="300"></canvas>
+            </div>
+          </div>
+
+          <div class="conclusion-card" style="margin-top:4px;">
+            <div class="card-title">Conclusion</div>
+            <div class="conclusion-text" id="et-conclusion">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div><!-- end estate tab -->
+
+</div><!-- end wrapper -->
+
+<footer style="text-align:center;padding:24px 16px 32px;font-family:'DM Mono',monospace;font-size:0.72rem;color:var(--muted);border-top:1px solid var(--border);margin-top:8px;">
+  &copy; 2025 Monte Carlo Explorer. All Rights Reserved.
+</footer>
+
+<script>
+// ====== UTILS ======
+function clamp(v,mn,mx){ return Math.min(mx,Math.max(mn,parseFloat(v)||mn)); }
+function randn(){ let u=0,v=0; while(!u)u=Math.random(); while(!v)v=Math.random(); return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }
+function triangular(a,c,b){ const u=Math.random(),fc=(c-a)/(b-a); return u<fc?a+Math.sqrt(u*(b-a)*(c-a)):b-Math.sqrt((1-u)*(b-a)*(b-c)); }
+function pct(arr,p){ const s=[...arr].sort((a,b)=>a-b); return s[Math.min(Math.floor(p/100*s.length),s.length-1)]; }
+function fmt$(v){ return '$'+Math.round(v).toLocaleString(); }
+function fmtB(v){ return '₱'+v.toFixed(1)+'B'; }
+function getCtx(id){ const c=document.getElementById(id),dpr=window.devicePixelRatio||1,rect=c.getBoundingClientRect(),w=rect.width||c.parentElement.clientWidth,h=parseInt(c.getAttribute('height'))||220; c.width=w*dpr;c.height=h*dpr;c.style.height=h+'px'; const ctx=c.getContext('2d');ctx.scale(dpr,dpr);ctx._w=w;ctx._h=h;return ctx; }
+function switchTab(id,btn){ document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active')); document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active')); document.getElementById('tab-'+id).classList.add('active'); btn.classList.add('active'); }
+function switchEtView(id,btn){ document.querySelectorAll('.et-view').forEach(v=>v.classList.remove('active')); document.querySelectorAll('.et-view-btn').forEach(b=>b.classList.remove('active')); document.getElementById('et-view-'+id).classList.add('active'); btn.classList.add('active'); setTimeout(()=>drawEtCharts(),50); }
+
+// ====== TAB 1: PI ======
+function runPi(){
+  const n=clamp(document.getElementById('pi-num').value,100,20000);
+  document.getElementById('pi-slider').value=n; document.getElementById('pi-num').value=n;
+  let cnt=0; const xs=[],ys=[],ins=[];
+  for(let i=0;i<n;i++){ const x=Math.random()*2-1,y=Math.random()*2-1,i_=x*x+y*y<=1; xs.push(x);ys.push(y);ins.push(i_);if(i_)cnt++; }
+  const pi=(cnt/n)*4, err=Math.abs(pi-Math.PI), sig=Math.sqrt(Math.PI*(4-Math.PI)/n);
+  document.getElementById('pi-value').textContent=pi.toFixed(4);
+  document.getElementById('pi-est').textContent=pi.toFixed(4);
+  document.getElementById('pi-err').textContent=err.toFixed(4);
+  document.getElementById('pi-inside').textContent=cnt.toLocaleString();
+  document.getElementById('pi-sigma-note').textContent=`For N=${n.toLocaleString()}: σ ≈ ${sig.toFixed(4)}`;
+  document.getElementById('pi-result').style.display='block';
+  document.getElementById('pi-empty').style.display='none';
+  const quality=err<0.01?'highly accurate':err<0.05?'reasonably accurate':'a rough';
+  const tip=n>=10000?'The large sample supports reliable estimation.':'Try 10,000+ darts for tighter results.';
+  document.getElementById('pi-conclusion').innerHTML=`<span class="therefore">Therefore,</span> with <strong>${n.toLocaleString()} darts</strong>, the simulation produced ${quality} estimate of <strong>π ≈ ${pi.toFixed(4)}</strong>. The absolute error is <strong>${err.toFixed(4)}</strong> (${(err/Math.PI*100).toFixed(3)}%). Theoretical standard error: <strong>σ ≈ ${sig.toFixed(4)}</strong> — about 68% of repeated runs should land within ±${sig.toFixed(4)} of π. `+tip;
+  requestAnimationFrame(()=>{
+    const ctx=getCtx('pi-canvas'),W=ctx._w,H=ctx._h;
+    ctx.fillStyle='#12121a';ctx.fillRect(0,0,W,H);
+    const cx=W/2,cy=H/2,r=Math.min(W,H)/2-2;
+    ctx.strokeStyle='rgba(124,109,250,0.25)';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.stroke();
+    ctx.strokeStyle='rgba(255,255,255,0.04)';ctx.lineWidth=1;
+    for(let g=.25;g<1;g+=.25){ctx.beginPath();ctx.moveTo(cx-r*g*2,0);ctx.lineTo(cx-r*g*2,H);ctx.stroke();ctx.beginPath();ctx.moveTo(cx+r*g*2,0);ctx.lineTo(cx+r*g*2,H);ctx.stroke();ctx.beginPath();ctx.moveTo(0,cy-r*g*2);ctx.lineTo(W,cy-r*g*2);ctx.stroke();ctx.beginPath();ctx.moveTo(0,cy+r*g*2);ctx.lineTo(W,cy+r*g*2);ctx.stroke();}
+    const dr=Math.max(1,Math.min(3,5000/n));
+    for(let i=0;i<xs.length;i++){ctx.beginPath();ctx.arc(cx+xs[i]*r,cy+ys[i]*r,dr,0,Math.PI*2);ctx.fillStyle=ins[i]?'rgba(124,109,250,0.7)':'rgba(250,109,154,0.55)';ctx.fill();}
+  });
+}
+
+// ====== TAB 2: TIMELINE ======
+function runTimeline(){
+  const a=parseFloat(document.getElementById('tl-min').value),c=parseFloat(document.getElementById('tl-mode').value),b=parseFloat(document.getElementById('tl-max').value);
+  const dl=clamp(document.getElementById('tl-num').value,10,120);
+  if(a>=b||c<a||c>b){alert('Check min/mode/max: need min < mode < max');return;}
+  document.getElementById('tl-slider').value=dl; document.getElementById('tl-num').value=dl;
+  const N=10000,sims=Array.from({length:N},()=>triangular(a,c,b));
+  const onTime=sims.filter(v=>v<=dl).length,prob=(onTime/N*100).toFixed(1);
+  const med=pct(sims,50).toFixed(1),p10=pct(sims,10).toFixed(1),p90=pct(sims,90).toFixed(1),theorMean=((a+b+c)/3).toFixed(1);
+  document.getElementById('tl-prob').textContent=prob+'%';document.getElementById('tl-prob-sub').textContent=`chance of finishing by day ${dl}`;
+  document.getElementById('tl-median').textContent=med+'d';document.getElementById('tl-p10').textContent=p10+'d';document.getElementById('tl-p90').textContent=p90+'d';
+  document.getElementById('tl-mean-note').textContent=`=(${a}+${b}+${c})/3 = ${theorMean} days`;
+  document.getElementById('tl-result').style.display='block';document.getElementById('tl-empty').style.display='none';
+  setTimeout(()=>{document.getElementById('tl-bar-fill').style.width=prob+'%';document.getElementById('tl-bar-pct').textContent=prob+'%';},50);
+  const pn=parseFloat(prob),spread=(parseFloat(p90)-parseFloat(p10)).toFixed(1);
+  const risk=pn>=80?'low-risk':pn>=50?'moderate-risk':'high-risk';
+  const advice=pn>=80?'The deadline appears achievable under most scenarios.':pn>=50?'Meaningful risk of delay — consider a small buffer.':`Deadline too tight. Median ${med}d — consider extending or reducing scope.`;
+  document.getElementById('tl-conclusion').innerHTML=`<span class="therefore">Therefore,</span> given estimates (best: <strong>${a}d</strong>, likely: <strong>${c}d</strong>, worst: <strong>${b}d</strong>), this is a <strong>${risk}</strong> timeline. With deadline at <strong>day ${dl}</strong>, there is <strong>${prob}%</strong> chance of finishing on time. Theoretical mean: <strong>${theorMean}d</strong>, simulated median: <strong>${med}d</strong>. P10–P90 spread: <strong>${spread} days</strong>. `+advice;
+  requestAnimationFrame(()=>{
+    const ctx=getCtx('tl-canvas'),W=ctx._w,H=ctx._h;
+    ctx.fillStyle='#12121a';ctx.fillRect(0,0,W,H);
+    const bins=50,lo=Math.min(...sims),hi=Math.max(...sims),bw=(hi-lo)/bins;
+    const counts=new Array(bins).fill(0);sims.forEach(v=>{const bi=Math.min(bins-1,Math.floor((v-lo)/bw));counts[bi]++;});
+    const maxC=Math.max(...counts),pad={l:30,r:10,t:10,b:28},cw=(W-pad.l-pad.r)/bins,ch=H-pad.t-pad.b;
+    for(let i=0;i<bins;i++){const x=pad.l+i*cw,bH=(counts[i]/maxC)*ch,bv=lo+i*bw;ctx.fillStyle=bv>dl?'rgba(250,109,154,0.7)':'rgba(124,109,250,0.75)';ctx.fillRect(x,pad.t+ch-bH,cw-1,bH);}
+    const dlX=pad.l+((dl-lo)/(hi-lo))*(W-pad.l-pad.r);
+    ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.setLineDash([4,3]);ctx.beginPath();ctx.moveTo(dlX,pad.t);ctx.lineTo(dlX,pad.t+ch);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle='#fff';ctx.font='10px DM Mono,monospace';ctx.fillText('Deadline',dlX+4,pad.t+14);
+    ctx.fillStyle='rgba(107,107,136,0.8)';ctx.font='10px DM Mono,monospace';ctx.fillText(lo.toFixed(0)+'d',pad.l,H-6);ctx.fillText(hi.toFixed(0)+'d',W-pad.r-24,H-6);
+  });
+}
+
+// ====== TAB 3: INVESTMENT ======
+function runInvestment(){
+  const S0=parseFloat(document.getElementById('inv-init').value),T=parseInt(document.getElementById('inv-years').value);
+  const mu=parseFloat(document.getElementById('inv-return').value)/100,sig=parseFloat(document.getElementById('inv-vol').value)/100;
+  const nP=clamp(document.getElementById('inv-num').value,50,500);
+  document.getElementById('inv-slider').value=nP;document.getElementById('inv-num').value=nP;
+  const paths=[];
+  for(let p=0;p<nP;p++){const path=[S0];let s=S0;for(let t=0;t<T;t++){s*=Math.exp((mu-.5*sig*sig)+sig*randn());path.push(s);}paths.push(path);}
+  const finals=paths.map(p=>p[p.length-1]),med=pct(finals,50),p10v=pct(finals,10),p90v=pct(finals,90);
+  const infl=S0*Math.pow(1.03,T),beatPct=(finals.filter(v=>v>infl).length/finals.length*100).toFixed(0);
+  const expFinal=S0*Math.exp(mu*T);
+  document.getElementById('inv-median').textContent=fmt$(med);document.getElementById('inv-p90').textContent=fmt$(p90v);
+  document.getElementById('inv-p10').textContent=fmt$(p10v);document.getElementById('inv-beat').textContent=beatPct+'%';
+  document.getElementById('inv-expected-note').textContent=`${fmt$(S0)}·e^(${(mu*100).toFixed(1)}%×${T}) ≈ ${fmt$(expFinal)}`;
+  document.getElementById('inv-inflation-note').textContent=`After ${T}yr @ 3%/yr ≈ ${fmt$(infl)}`;
+  document.getElementById('inv-result').style.display='block';document.getElementById('inv-empty').style.display='none';
+  const gain=((med-S0)/S0*100).toFixed(1),down=((p10v-S0)/S0*100).toFixed(1),up=((p90v-S0)/S0*100).toFixed(1);
+  const outlook=parseInt(beatPct)>=75?'strong':parseInt(beatPct)>=50?'moderate':'uncertain';
+  document.getElementById('inv-conclusion').innerHTML=`<span class="therefore">Therefore,</span> investing <strong>${fmt$(S0)}</strong> over <strong>${T} years</strong> at <strong>${(mu*100).toFixed(1)}% return</strong> / <strong>${(sig*100).toFixed(1)}% volatility</strong> shows a <strong>${outlook}</strong> outlook. Median final value: <strong>${fmt$(med)}</strong> (+${gain}%). Best 10%: <strong>${fmt$(p90v)}</strong> (+${up}%); Worst 10%: <strong>${fmt$(p10v)}</strong> (${down}%). <strong>${beatPct}%</strong> of paths beat inflation benchmark of <strong>${fmt$(infl)}</strong>. ${parseInt(beatPct)>=70?'Portfolio is likely to preserve and grow real purchasing power.':'Notable inflation risk — consider longer horizon or higher return assumptions.'}`;
+  requestAnimationFrame(()=>{
+    const ctx=getCtx('inv-canvas'),W=ctx._w,H=ctx._h;
+    ctx.fillStyle='#12121a';ctx.fillRect(0,0,W,H);
+    const pad={l:48,r:12,t:12,b:28},cw=W-pad.l-pad.r,ch=H-pad.t-pad.b;
+    const allV=paths.flat(),minV=Math.min(...allV),maxV=Math.max(...allV);
+    const sx=t=>pad.l+(t/T)*cw,sy=v=>pad.t+ch-((v-minV)/(maxV-minV))*ch;
+    const sf=[...finals].sort((a,b)=>a-b),thr=sf[Math.floor(nP*.1)];
+    paths.forEach((path,i)=>{ctx.beginPath();path.forEach((v,t)=>t===0?ctx.moveTo(sx(t),sy(v)):ctx.lineTo(sx(t),sy(v)));ctx.strokeStyle=finals[i]<=thr?'rgba(250,109,154,0.3)':'rgba(124,109,250,0.12)';ctx.lineWidth=1;ctx.stroke();});
+    const mp=Array.from({length:T+1},(_,t)=>pct(paths.map(p=>p[t]),50));
+    ctx.beginPath();mp.forEach((v,t)=>t===0?ctx.moveTo(sx(t),sy(v)):ctx.lineTo(sx(t),sy(v)));ctx.strokeStyle='rgba(109,250,209,0.9)';ctx.lineWidth=2.5;ctx.stroke();
+    ctx.strokeStyle='rgba(255,255,255,0.12)';ctx.lineWidth=1;ctx.setLineDash([4,4]);const y0=sy(S0);ctx.beginPath();ctx.moveTo(pad.l,y0);ctx.lineTo(W-pad.r,y0);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle='rgba(107,107,136,0.8)';ctx.font='10px DM Mono,monospace';ctx.fillText('yr 0',pad.l-4,H-6);ctx.fillText('yr '+T,W-pad.r-22,H-6);
+    ctx.save();ctx.translate(12,pad.t+ch/2);ctx.rotate(-Math.PI/2);ctx.fillText('Portfolio Value',0,0);ctx.restore();
+    const ctx2=getCtx('inv-hist'),W2=ctx2._w,H2=ctx2._h;
+    ctx2.fillStyle='#12121a';ctx2.fillRect(0,0,W2,H2);
+    const p2={l:10,r:10,t:10,b:28},b2=40,lo2=Math.min(...finals),hi2=Math.max(...finals),bw2=(hi2-lo2)/b2;
+    const c2=new Array(b2).fill(0);finals.forEach(v=>{const bi=Math.min(b2-1,Math.floor((v-lo2)/bw2));c2[bi]++;});
+    const mc2=Math.max(...c2),cw2=(W2-p2.l-p2.r)/b2,ch2=H2-p2.t-p2.b;
+    for(let i=0;i<b2;i++){const x=p2.l+i*cw2,bH=(c2[i]/mc2)*ch2,bm=lo2+(i+.5)*bw2;const g=ctx2.createLinearGradient(0,p2.t,0,p2.t+ch2);g.addColorStop(0,bm>=med?'rgba(109,250,209,0.8)':'rgba(124,109,250,0.7)');g.addColorStop(1,'rgba(124,109,250,0.1)');ctx2.fillStyle=g;ctx2.fillRect(x,p2.t+ch2-bH,cw2-1,bH);}
+    const mx2=p2.l+((med-lo2)/(hi2-lo2))*(W2-p2.l-p2.r);
+    ctx2.strokeStyle='rgba(109,250,209,0.9)';ctx2.lineWidth=2;ctx2.setLineDash([4,3]);ctx2.beginPath();ctx2.moveTo(mx2,p2.t);ctx2.lineTo(mx2,p2.t+ch2);ctx2.stroke();ctx2.setLineDash([]);
+    ctx2.fillStyle='rgba(109,250,209,0.9)';ctx2.font='10px DM Mono,monospace';ctx2.fillText('Median',mx2+4,p2.t+14);
+    ctx2.fillStyle='rgba(107,107,136,0.8)';ctx2.font='10px DM Mono,monospace';ctx2.fillText(fmt$(lo2),p2.l,H2-6);ctx2.fillText(fmt$(hi2),W2-p2.r-50,H2-6);
+  });
+}
+
+// ====== TAB 4: ESTATE TAX ======
+let etData = null;
+
+function runEstate(){
+  const frozenB = clamp(document.getElementById('et-frozen-n').value,30,150);
+  const cgtRate = clamp(document.getElementById('et-cgt-n').value,2,15)/100;
+  const rptRate = clamp(document.getElementById('et-rpt-n').value,0.5,3)/100;
+  const gdpMult = clamp(document.getElementById('et-gdp-n').value,1.0,3.0);
+  const etRate  = clamp(document.getElementById('et-rate-n').value,1,10)/100;
+  const adopt   = clamp(document.getElementById('et-adopt-n').value,10,90)/100;
+  const compLift= clamp(document.getElementById('et-compliance-n').value,5,60)/100;
+  const N       = clamp(document.getElementById('et-iter-n').value,500,10000);
+
+  // Sync sliders
+  document.getElementById('et-frozen').value=frozenB; document.getElementById('et-cgt').value=cgtRate*100;
+  document.getElementById('et-rpt').value=rptRate*100; document.getElementById('et-gdp').value=gdpMult;
+  document.getElementById('et-rate').value=etRate*100; document.getElementById('et-adopt').value=adopt*100;
+  document.getElementById('et-compliance').value=compLift*100; document.getElementById('et-iter').value=N;
+
+  const abol=[], ref=[], base=[];
+  for(let i=0;i<N;i++){
+    // Abolition: frozen assets unlocked, CGT + RPT + GDP multiplier effect, with noise
+    const eps_cgt = Math.max(0.3,1+randn()*0.18);
+    const eps_rpt = Math.max(0.3,1+randn()*0.15);
+    const eps_gdp = Math.max(0.5,1+randn()*0.2);
+    const r_abol = frozenB * cgtRate * eps_cgt * gdpMult * eps_gdp
+                 + frozenB * rptRate * eps_rpt;
+    abol.push(r_abol);
+
+    // Reform: partial adoption, reduced ET rate + amnesty compliance lift
+    const eps_et = Math.max(0.3,1+randn()*0.12);
+    const eps_comp = Math.max(0.3,1+randn()*0.1);
+    const r_ref = frozenB * adopt * etRate * eps_et
+                + frozenB * adopt * compLift * eps_comp * 0.5;
+    ref.push(r_ref);
+
+    // Baseline: current collection ~₱3.2B ± noise
+    const r_base = Math.max(0.5, 3.2 + randn()*0.8);
+    base.push(r_base);
+  }
+
+  etData = {abol, ref, base, N, frozenB, cgtRate, rptRate, gdpMult, etRate, adopt, compLift};
+
+  const mA=pct(abol,50),mR=pct(ref,50),mB=pct(base,50);
+  document.getElementById('et-m-abol').textContent=fmtB(mA);
+  document.getElementById('et-m-ref').textContent=fmtB(mR);
+  document.getElementById('et-m-base').textContent=fmtB(mB);
+  document.getElementById('et-result').style.display='block';
+  document.getElementById('et-empty').style.display='none';
+
+  // Conclusion
+  const upliftAbol = ((mA-mB)/mB*100).toFixed(0);
+  const upliftRef  = ((mR-mB)/mB*100).toFixed(0);
+  const better = mA > mR ? `The Abolition scenario dominates, generating <strong>${fmtB(mA)}</strong> at median — <strong>${upliftAbol}%</strong> above baseline.` : `The Reform scenario is competitive at <strong>${fmtB(mR)}</strong>, <strong>${upliftRef}%</strong> above baseline.`;
+  document.getElementById('et-conclusion').innerHTML=
+    `<span class="therefore">Therefore,</span> based on <strong>${N.toLocaleString()} Monte Carlo iterations</strong> with a frozen asset base of <strong>₱${frozenB}B</strong>, both alternative policies vastly outperform the status quo. `+
+    `<strong>Baseline</strong> median revenue is <strong>${fmtB(mB)}</strong>, representing the current &lt;0.1% collection rate. `+
+    better+` `+
+    `Under <strong>Abolition</strong> (CGT ${(cgtRate*100).toFixed(1)}% + RPT ${(rptRate*100).toFixed(1)}% + GDP multiplier ${gdpMult}×), median revenue reaches <strong>${fmtB(mA)}</strong>. `+
+    `Under <strong>Reform</strong> (${(etRate*100).toFixed(1)}% ET rate, ${(adopt*100).toFixed(0)}% adoption, ${(compLift*100).toFixed(0)}% compliance lift), median is <strong>${fmtB(mR)}</strong>. `+
+    `These findings directly support <strong>RQ 4.1 and 5.1–5.2</strong>: both reform paths unlock significantly more revenue than the current frozen-asset status quo.`;
+
+  drawEtCharts();
+}
+
+function drawEtCharts(){
+  if(!etData) return;
+  const {abol,ref,base} = etData;
+
+  // --- Distribution chart (KDE-style histogram overlay) ---
+  const distEl = document.getElementById('et-view-dist');
+  if(distEl.classList.contains('active')){
+    requestAnimationFrame(()=>{
+      const ctx=getCtx('et-dist-canvas'),W=ctx._w,H=ctx._h;
+      ctx.fillStyle='#12121a';ctx.fillRect(0,0,W,H);
+      const pad={l:42,r:16,t:16,b:32};
+      const allV=[...abol,...ref,...base];
+      const lo=Math.min(...allV)*0.9, hi=Math.max(...allV)*1.05;
+      const bins=60, bw=(hi-lo)/bins;
+      const cw=(W-pad.l-pad.r)/bins, ch=H-pad.t-pad.b;
+
+      const buildHist=(arr)=>{ const c=new Array(bins).fill(0); arr.forEach(v=>{const b=Math.min(bins-1,Math.floor((v-lo)/bw));c[b]++;}); return c; };
+      const hA=buildHist(abol),hR=buildHist(ref),hB=buildHist(base);
+      const maxC=Math.max(...hA,...hR,...hB);
+
+      const drawBars=(hist,color)=>{ for(let i=0;i<bins;i++){ const x=pad.l+i*cw,bH=(hist[i]/maxC)*ch; ctx.fillStyle=color; ctx.fillRect(x,pad.t+ch-bH,cw-1,bH); } };
+      drawBars(hB,'rgba(250,109,154,0.3)');
+      drawBars(hR,'rgba(124,109,250,0.35)');
+      drawBars(hA,'rgba(109,250,209,0.4)');
+
+      // Median lines
+      const drawMed=(arr,color)=>{ const m=pct(arr,50); const x=pad.l+((m-lo)/(hi-lo))*(W-pad.l-pad.r); ctx.strokeStyle=color;ctx.lineWidth=2;ctx.setLineDash([5,3]);ctx.beginPath();ctx.moveTo(x,pad.t);ctx.lineTo(x,pad.t+ch);ctx.stroke();ctx.setLineDash([]); ctx.fillStyle=color;ctx.font='9px DM Mono,monospace';ctx.fillText(fmtB(m),x+3,pad.t+12); };
+      drawMed(abol,'rgba(109,250,209,0.9)');
+      drawMed(ref,'rgba(124,109,250,0.9)');
+      drawMed(base,'rgba(250,109,154,0.9)');
+
+      // Axes
+      ctx.fillStyle='rgba(107,107,136,0.7)';ctx.font='10px DM Mono,monospace';
+      for(let i=0;i<=4;i++){ const v=lo+(hi-lo)*i/4; const x=pad.l+((v-lo)/(hi-lo))*(W-pad.l-pad.r); ctx.fillText(v.toFixed(0),x-10,H-6); }
+      ctx.save();ctx.translate(14,pad.t+ch/2);ctx.rotate(-Math.PI/2);ctx.fillText('Frequency',0,0);ctx.restore();
+      ctx.fillStyle='rgba(107,107,136,0.5)';ctx.font='9px DM Mono,monospace';ctx.fillText('Revenue (₱B)',W/2-20,H-2);
+    });
+  }
+
+  // --- Convergence chart ---
+  const convEl = document.getElementById('et-view-conv');
+  if(convEl.classList.contains('active')){
+    requestAnimationFrame(()=>{
+      const ctx=getCtx('et-conv-canvas'),W=ctx._w,H=ctx._h;
+      ctx.fillStyle='#12121a';ctx.fillRect(0,0,W,H);
+      const pad={l:48,r:16,t:16,b:32},cw=W-pad.l-pad.r,ch=H-pad.t-pad.b;
+      const N=abol.length;
+      const step=Math.max(1,Math.floor(N/200));
+      const runMean=(arr)=>{ const out=[]; let s=0; for(let i=0;i<arr.length;i+=step){s+=arr.slice(i,i+step).reduce((a,b)=>a+b,0)/step; out.push(s/(out.length+1)); } return out; };
+      const rmA=runMean(abol),rmR=runMean(ref),rmB=runMean(base);
+      const allV=[...rmA,...rmR,...rmB],lo=Math.min(...allV)*0.9,hi=Math.max(...allV)*1.05;
+      const pts=rmA.length;
+      const sx=i=>pad.l+(i/pts)*cw, sy=v=>pad.t+ch-((v-lo)/(hi-lo))*ch;
+      const drawLine=(rm,color)=>{ ctx.beginPath();rm.forEach((v,i)=>i===0?ctx.moveTo(sx(i),sy(v)):ctx.lineTo(sx(i),sy(v)));ctx.strokeStyle=color;ctx.lineWidth=2;ctx.stroke(); };
+      drawLine(rmB,'rgba(250,109,154,0.8)');
+      drawLine(rmR,'rgba(124,109,250,0.8)');
+      drawLine(rmA,'rgba(109,250,209,0.9)');
+      ctx.fillStyle='rgba(107,107,136,0.7)';ctx.font='10px DM Mono,monospace';
+      ctx.fillText('0',pad.l,H-6);ctx.fillText(N.toLocaleString(),W-pad.r-20,H-6);
+      for(let i=0;i<=3;i++){ const v=lo+(hi-lo)*i/3; ctx.fillText(v.toFixed(1),2,sy(v)+4); }
+      ctx.save();ctx.translate(14,pad.t+ch/2);ctx.rotate(-Math.PI/2);ctx.fillText('Running Mean (₱B)',0,0);ctx.restore();
+    });
+  }
+
+  // --- Risk comparison (percentile bars) ---
+  const riskEl = document.getElementById('et-view-risk');
+  if(riskEl.classList.contains('active')){
+    requestAnimationFrame(()=>{
+      const ctx=getCtx('et-risk-canvas'),W=ctx._w,H=ctx._h;
+      ctx.fillStyle='#12121a';ctx.fillRect(0,0,W,H);
+      const pctiles=[5,25,50,75,95];
+      const scenarios=[
+        {label:'Abolition',data:abol,color:'rgba(109,250,209,0.8)'},
+        {label:'Reform',data:ref,color:'rgba(124,109,250,0.8)'},
+        {label:'Baseline',data:base,color:'rgba(250,109,154,0.8)'}
+      ];
+      const pad={l:50,r:16,t:20,b:60};
+      const groupW=(W-pad.l-pad.r)/pctiles.length;
+      const barW=groupW/4; // 3 bars + gap per pctile group
+      const allV=scenarios.flatMap(s=>pctiles.map(p=>pct(s.data,p)));
+      const maxV=Math.max(...allV)*1.05;
+      const ch=H-pad.t-pad.b;
+      const sy=v=>pad.t+ch-(v/maxV)*ch;
+
+      pctiles.forEach((p,pi)=>{
+        const gx=pad.l+pi*groupW;
+        scenarios.forEach((sc,si)=>{
+          const v=pct(sc.data,p);
+          const x=gx+si*(barW+2)+groupW*0.08;
+          const bH=(v/maxV)*ch;
+          ctx.fillStyle=sc.color;
+          ctx.fillRect(x,sy(v),barW,bH);
+          ctx.fillStyle='rgba(255,255,255,0.55)';ctx.font='8px DM Mono,monospace';
+          if(bH>18) ctx.fillText(v.toFixed(0),x+1,sy(v)+11);
+        });
+        ctx.fillStyle='rgba(107,107,136,0.8)';ctx.font='10px DM Mono,monospace';
+        ctx.fillText('P'+p,gx+groupW/2-8,H-6);
+      });
+
+      // Y axis
+      ctx.fillStyle='rgba(107,107,136,0.7)';ctx.font='10px DM Mono,monospace';
+      for(let i=0;i<=4;i++){ const v=maxV*i/4; const y=pad.t+ch-(v/maxV)*ch; ctx.fillText(v.toFixed(0),2,y+4); ctx.strokeStyle='rgba(255,255,255,0.04)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke(); }
+      ctx.save();ctx.translate(14,pad.t+ch/2);ctx.rotate(-Math.PI/2);ctx.fillStyle='rgba(107,107,136,0.7)';ctx.font='10px DM Mono,monospace';ctx.fillText('Revenue (₱B)',0,0);ctx.restore();
+
+      // Legend
+      const lx=pad.l;
+      scenarios.forEach((sc,i)=>{ ctx.fillStyle=sc.color; ctx.fillRect(lx+i*90,H-22,10,4); ctx.fillStyle='rgba(107,107,136,0.8)';ctx.font='9px DM Mono,monospace'; ctx.fillText(sc.label,lx+i*90+14,H-16); });
+    });
+  }
+}
+
+window.addEventListener('resize',()=>{
+  if(document.getElementById('pi-result').style.display!=='none')runPi();
+  if(document.getElementById('tl-result').style.display!=='none')runTimeline();
+  if(document.getElementById('inv-result').style.display!=='none')runInvestment();
+  if(etData)drawEtCharts();
+});
+</script>
+</body>
+</html>
